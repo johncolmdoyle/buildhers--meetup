@@ -1,0 +1,1 @@
+aws dynamodb execute-statement --statement "INSERT INTO Example VALUE {'id': '123', 'message': 'hello', 'region': 'us-east-1'}" --profile personal --region us-east-1

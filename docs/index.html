@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+
+	<head>
+		<meta charset="utf-8">
+
+		<title>Serverless Processing Near and Far</title>
+
+		<meta name="description" content="Serverless Processing Near and Far with DynamoDB Global Tables & Lambda">
+		<meta name="author" content="Hakim El Hattab">
+
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+		<link rel="stylesheet" href="dist/reset.css">
+		<link rel="stylesheet" href="dist/reveal.css">
+		<link rel="stylesheet" href="dist/theme/black.css" id="theme">
+
+		<!-- Theme used for syntax highlighting of code -->
+		<link rel="stylesheet" href="plugin/highlight/monokai.css">
+	</head>
+
+	<body>
+
+		<div class="reveal">
+
+			<!-- Any section element inside of this container is displayed as a slide -->
+			<div class="slides">
+				<section>
+					<img src="media/dynamodb-globals.png" alt="DyanmoDB Global" style="height: 250px; margin: 0 auto 4rem auto; background: transparent;" class="demo-logo">
+					<h3>Serverless processing </h3>
+					<h4>Near and Far<h4>
+					<p>
+						<small>Presented by <a href="https://gizmo.codes">John Doyle</a></small>
+					</p>
+				</section>
+
+				<section>
+					<h2>DynamoDB</h2>
+					<p><span style="display: inline-block;" class="fragment fade-up">NoSQL Database</span></p>
+					<p><span style="display: inline-block;" class="fragment fade-up">Region Based</span></p>
+					<p><span style="display: inline-block;" class="fragment fade-up">Scalable</span></p>
+					<aside class="notes">
+						Its a fully managed key-value NoSQL database. You will set a primary key and retrieve whole JSON documents.
+						The service, by default, is region-specific. You can create a table called A in US-EAST-1 and another in EU-WEST-1 also called A without conflicts.
+						In terms of on-demand capacity, it's pay-per-request pricing. You can configure it to control costs, or enable autoscaling to allow it to adjust to demand.
+					</aside>
+				</section>
+
+				<section>
+					<h2>DynamoDB Streams</h2>
+					<p><span style="display: inline-block;" class="fragment fade-up">Time Ordered Squence of Events</span></p>
+					<p><span style="display: inline-block;" class="fragment fade-up"><img src="media/fifo-queue.png" alt="FIFO Queue" style="height: 250px; margin: 0 auto 4rem auto; background: transparent;" class="demo-logo"></span></p>
+					<aside class="notes">
+						As your data is created, updated, or deleted, it recieves a sequence id.
+						All of these events are stored in a queue, in a first in/first out format. They are stored for 24 hours.
+					</aside>
+				</section>
+
+				<section>
+					<h2>DynamoDB Global Tables</h2>
+					<p><span style="display: inline-block;" class="fragment fade-up">Multi-Region replication</span></p>
+					<p><span style="display: inline-block;" class="fragment fade-up">Multi-Master replication</span></p>
+					<p><span style="display: inline-block;" class="fragment fade-up">Native</span></p>
+					<aside class="notes">
+						When we would deploy code to our own data centers, we would often have a primary and secondary database. 
+						Still the replications were only 1 way, from primary to the secondary. Latency is around 1 second.
+						If you're already using DynamoDB, there is no application re-writes required!
+					</aside>
+				</section>
+
+				<section data-auto-animate>
+					<h2 data-id="code-title">AWS CDK</h2>
+					<pre data-id="code-animation"><code class="hljs" data-trim data-line-numbers>
+						const globalTable = new dynamodb.Table(this, 'GlobalTable', {
+							tableName: 'Example',
+							partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+							replicationRegions: ['us-east-1', 'us-east-2', 'us-west-2'],
+						  });
+					</code></pre>
+					<aside class="notes">
+						The AWS CDK, their infrastructure as code framework, makes creating global tables incredibly easy!
+					</aside>
+				</section>
+
+				<section>
+					<h2>Demo</h2>
+				</section>
+
+				<section>
+					<h2>Lambda</h2>
+					<p><span style="display: inline-block;" class="fragment fade-up">Serverless Functions</span></p>
+					<p><span style="display: inline-block;" class="fragment fade-up">Runtime Language</span></p>
+					<p><span style="display: inline-block;" class="fragment fade-up">Permissions</span></p>
+					<aside class="notes">
+						Lambda is a serverless computer service letting you run code without provissioning or managing infrastructure.
+						You configure your function with your desired language, a quick demo will be using NodeJS.
+						Like many other aspects of AWS, you can grant fine grained permissions to the lambda.
+					</aside>
+				</section>
+
+				<section data-auto-animate>
+					<h2 data-id="code-title">AWS CDK</h2>
+					<pre style="width: 1100px" data-id="code-animation"><code class="hljs" data-trim data-line-numbers="|1-4|12-19|22|26-30"><script type="text/template">
+						const inputGlobalTable = new dynamodb.Table(this, 'GlobalTable', {
+							tableName: 'Input',
+							partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+							replicationRegions: ['us-east-1', 'us-east-2', 'us-west-2'],
+						});
+					  
+						const outputGlobalTable = new dynamodb.Table(this, 'GlobalTable', {
+							tableName: 'Output',
+							partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+							replicationRegions: ['us-east-1', 'us-east-2', 'us-west-2'],
+						});
+					  
+						const function = new lambda.Function(this, 'ProcessingFunction', {
+							runtime: lambda.Runtime.NODEJS_16_X,
+							handler: 'index.handler',
+							code: lambda.Code.fromAsset(path.join(__dirname, 'lambda')),
+							environment: {
+							  TABLE: outputGlobalTable.tableName
+							}
+						});
+					  
+						outputGlobalTable.grantWriteData(function);
+						inputGlobalTable.grantStreamRead(fn);
+
+						// Add the dynamodb stream
+						function.addEventSource(
+							new events.DynamoEventSource(inputGlobalTable, {
+							  startingPosition: lambda.StartingPosition.TRIM_HORIZON,
+							  batchSize: 5
+							}));
+					</script></code></pre>
+				</section>
+
+				<section>
+					<h2>Demo</h2>
+				</section>
+
+				<section style="text-align: left;">
+					<h1>THE END</h1>
+					<p>
+						- <a href="https://github.com/johncolmdoyle/buildhers--meetup">github.com/johncolmdoyle/buildhers--meetup</a> <br>
+					</p>
+				</section>
+			</div>
+
+		</div>
+
+		<script src="dist/reveal.js"></script>
+		<script src="plugin/zoom/zoom.js"></script>
+		<script src="plugin/notes/notes.js"></script>
+		<script src="plugin/search/search.js"></script>
+		<script src="plugin/markdown/markdown.js"></script>
+		<script src="plugin/highlight/highlight.js"></script>
+		<script>
+
+			// Also available as an ES module, see:
+			// https://revealjs.com/initialization/
+			Reveal.initialize({
+				controls: true,
+				progress: true,
+				center: true,
+				hash: true,
+
+				// Learn about plugins: https://revealjs.com/plugins/
+				plugins: [ RevealZoom, RevealNotes, RevealSearch, RevealMarkdown, RevealHighlight ]
+			});
+
+		</script>
+
+	</body>
+</html>

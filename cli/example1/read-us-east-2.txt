@@ -1,0 +1,1 @@
+aws dynamodb execute-statement --statement "SELECT * FROM Example" --profile personal --region us-east-2
